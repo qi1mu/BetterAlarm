@@ -119,6 +119,15 @@ body {
   background: rgba(123, 92, 255, 0.35);
 }
 
+.btn--danger {
+  border-color: rgba(255, 112, 112, 0.55);
+  background: rgba(255, 112, 112, 0.18);
+}
+
+.btn--danger:hover {
+  background: rgba(255, 112, 112, 0.28);
+}
+
 .alarm-list {
   min-height: 48px;
   border-radius: 10px;
@@ -147,6 +156,12 @@ body {
   background: rgba(255, 255, 255, 0.04);
   border-radius: 12px;
   padding: 12px;
+}
+
+.alarm-item__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .alarm-item__meta {

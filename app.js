@@ -80,6 +80,36 @@ function getCurrentTimeHHMM(now) {
   return `${hh}:${mm}`;
 }
 
+function getAlarmScheduledMs(alarm, now) {
+  const [hhRaw, mmRaw] = String(alarm.time).split(":");
+  const hh = Number(hhRaw);
+  const mm = Number(mmRaw);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+  const scheduled = new Date(now);
+  scheduled.setHours(hh, mm, 0, 0);
+  if (scheduled.getTime() <= now.getTime()) {
+    scheduled.setDate(scheduled.getDate() + 1);
+  }
+  return scheduled.getTime();
+}
+
+function getAlarmNextRingInfo(alarm, now) {
+  if (!alarm.enabled) return null;
+  const nowMs = now.getTime();
+  const scheduledMs = getAlarmScheduledMs(alarm, now);
+  const hasFutureSnooze =
+    typeof alarm.snoozeUntil === "number" && alarm.snoozeUntil > nowMs;
+  const snoozeMs = hasFutureSnooze ? alarm.snoozeUntil : null;
+
+  if (snoozeMs !== null && (scheduledMs === null || snoozeMs <= scheduledMs)) {
+    return { whenMs: snoozeMs, source: "snooze" };
+  }
+  if (scheduledMs !== null) {
+    return { whenMs: scheduledMs, source: "schedule" };
+  }
+  return null;
+}
+
 function safeUuid() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
   return `alarm-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -115,20 +145,38 @@ function loadAlarms() {
   }
 }
 
-function getNextAlarm() {
-  const enabled = alarms.filter((a) => a.enabled).sort(sortAlarmsByTime);
-  return enabled[0] || null;
+function getNextAlarm(now) {
+  let next = null;
+  for (const alarm of alarms) {
+    const info = getAlarmNextRingInfo(alarm, now);
+    if (!info) continue;
+    if (!next || info.whenMs < next.whenMs) {
+      next = { alarm, ...info };
+    }
+  }
+  return next;
 }
 
 function updateHeaderStatus(now) {
   const status = byId("app-status");
   const current = formatNowStatus(now);
-  const next = getNextAlarm();
+  if (activeAlarmId) {
+    status.textContent = `Now: ${current} • Ringing`;
+    return;
+  }
+  const next = getNextAlarm(now);
   if (!next) {
     status.textContent = `Now: ${current} • No alarms enabled`;
     return;
   }
-  status.textContent = `Now: ${current} • Next: ${formatTime24To12(next.time)}`;
+  const when = new Date(next.whenMs);
+  const timeLabel = when.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const isTomorrow = when.toDateString() !== now.toDateString();
+  const suffix = next.source === "snooze" ? " (snoozed)" : isTomorrow ? " (tomorrow)" : "";
+  status.textContent = `Now: ${current} • Next: ${timeLabel}${suffix}`;
 }
 
 function ensureAudioContext() {
@@ -218,12 +266,14 @@ function snoozeActiveAlarm() {
 function checkForAlarmTrigger(now) {
   if (activeAlarmId) return;
   const nowMs = now.getTime();
-  const snoozedAlarm = alarms.find(
-    (alarm) =>
-      alarm.enabled &&
-      typeof alarm.snoozeUntil === "number" &&
-      alarm.snoozeUntil <= nowMs
-  );
+  const snoozedAlarm = alarms
+    .filter(
+      (alarm) =>
+        alarm.enabled &&
+        typeof alarm.snoozeUntil === "number" &&
+        alarm.snoozeUntil <= nowMs
+    )
+    .sort((a, b) => a.snoozeUntil - b.snoozeUntil)[0];
   if (snoozedAlarm) {
     triggerAlarm(snoozedAlarm, now, "snooze");
     return;
@@ -250,6 +300,7 @@ function startClockLoop() {
 function renderAlarms() {
   const list = byId("alarm-items");
   const empty = byId("alarm-empty");
+  const now = new Date();
 
   const sorted = [...alarms].sort(sortAlarmsByTime);
   empty.style.display = sorted.length === 0 ? "block" : "none";
@@ -260,6 +311,18 @@ function renderAlarms() {
       const label = escapeHtml(alarm.label || "Alarm");
       const minigame = escapeHtml(alarm.minigame || "Placeholder");
       const enabled = alarm.enabled ? "checked" : "";
+      const hasFutureSnooze =
+        alarm.enabled &&
+        typeof alarm.snoozeUntil === "number" &&
+        alarm.snoozeUntil > now.getTime();
+      const snoozeLabel = hasFutureSnooze
+        ? `<span class="pill">Snoozed until ${escapeHtml(
+            new Date(alarm.snoozeUntil).toLocaleTimeString([], {
+              hour: "numeric",
+              minute: "2-digit",
+            })
+          )}</span>`
+        : "";
 
       return `
         <li class="alarm-item" data-alarm-id="${alarm.id}">
@@ -268,14 +331,20 @@ function renderAlarms() {
             <div class="alarm-item__sub">
               <span>${label}</span>
               <span class="pill">Minigame: ${minigame}</span>
+              ${snoozeLabel}
             </div>
           </div>
-          <label class="switch" aria-label="Enable alarm">
-            <input type="checkbox" data-alarm-toggle ${enabled} />
-            <span class="switch__track" aria-hidden="true">
-              <span class="switch__thumb"></span>
-            </span>
-          </label>
+          <div class="alarm-item__actions">
+            <button type="button" class="btn btn--danger" data-alarm-delete>
+              Delete
+            </button>
+            <label class="switch" aria-label="Enable alarm">
+              <input type="checkbox" data-alarm-toggle ${enabled} />
+              <span class="switch__track" aria-hidden="true">
+                <span class="switch__thumb"></span>
+              </span>
+            </label>
+          </div>
         </li>
       `;
     })
@@ -332,6 +401,26 @@ function init() {
     if (!alarm) return;
     alarm.enabled = target.checked;
     saveAlarms();
+    updateHeaderStatus(new Date());
+  });
+
+  alarmList.addEventListener("click", (e) => {
+    const target = e.target;
+    if (!(target instanceof Element)) return;
+    if (!target.closest("[data-alarm-delete]")) return;
+    const row = target.closest("[data-alarm-id]");
+    if (!(row instanceof HTMLElement)) return;
+    const id = row.dataset.alarmId;
+    if (!id) return;
+
+    alarms = alarms.filter((alarm) => alarm.id !== id);
+    if (activeAlarmId === id) {
+      activeAlarmId = null;
+      stopRinging();
+      closeRingModal();
+    }
+    saveAlarms();
+    renderAlarms();
     updateHeaderStatus(new Date());
   });
 
