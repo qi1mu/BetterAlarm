@@ -29,6 +29,7 @@ const views = {
 };
 
 const STORAGE_KEY = "better-alarm.alarms.v1";
+const SNOOZE_MS = 5 * 60 * 1000;
 let alarms = [];
 let activeAlarmId = null;
 let audioContext = null;
@@ -105,6 +106,8 @@ function loadAlarms() {
         lastTriggeredDate: item.lastTriggeredDate
           ? String(item.lastTriggeredDate)
           : null,
+        snoozeUntil:
+          typeof item.snoozeUntil === "number" ? item.snoozeUntil : null,
       }))
       .filter((item) => /^\d{2}:\d{2}$/.test(item.time));
   } catch {
@@ -180,9 +183,12 @@ function closeRingModal() {
   byId("ring-modal").classList.add("modal--hidden");
 }
 
-function triggerAlarm(alarm, now) {
+function triggerAlarm(alarm, now, source = "schedule") {
   activeAlarmId = alarm.id;
-  alarm.lastTriggeredDate = getTodayKey(now);
+  if (source === "schedule") {
+    alarm.lastTriggeredDate = getTodayKey(now);
+  }
+  alarm.snoozeUntil = null;
   saveAlarms();
   renderAlarms();
   openRingModal(alarm);
@@ -193,10 +199,35 @@ function dismissActiveAlarm() {
   activeAlarmId = null;
   stopRinging();
   closeRingModal();
+  updateHeaderStatus(new Date());
+}
+
+function snoozeActiveAlarm() {
+  if (!activeAlarmId) return;
+  const alarm = alarms.find((item) => item.id === activeAlarmId);
+  if (!alarm) return;
+  alarm.snoozeUntil = Date.now() + SNOOZE_MS;
+  saveAlarms();
+  renderAlarms();
+  activeAlarmId = null;
+  stopRinging();
+  closeRingModal();
+  updateHeaderStatus(new Date());
 }
 
 function checkForAlarmTrigger(now) {
   if (activeAlarmId) return;
+  const nowMs = now.getTime();
+  const snoozedAlarm = alarms.find(
+    (alarm) =>
+      alarm.enabled &&
+      typeof alarm.snoozeUntil === "number" &&
+      alarm.snoozeUntil <= nowMs
+  );
+  if (snoozedAlarm) {
+    triggerAlarm(snoozedAlarm, now, "snooze");
+    return;
+  }
   const hhmm = getCurrentTimeHHMM(now);
   const today = getTodayKey(now);
   const dueAlarm = alarms.find(
@@ -270,6 +301,7 @@ function init() {
   const modal = byId("alarm-modal");
   const alarmList = byId("alarm-items");
   const dismissButton = byId("btn-dismiss-alarm");
+  const snoozeButton = byId("btn-snooze-alarm");
 
   alarms = loadAlarms();
 
@@ -320,6 +352,7 @@ function init() {
       minigame,
       enabled: true,
       lastTriggeredDate: null,
+      snoozeUntil: null,
     });
 
     form.reset();
@@ -330,6 +363,7 @@ function init() {
   });
 
   dismissButton.addEventListener("click", dismissActiveAlarm);
+  snoozeButton.addEventListener("click", snoozeActiveAlarm);
 
   showView("list");
   renderAlarms();
