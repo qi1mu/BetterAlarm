@@ -34,6 +34,7 @@ let alarms = [];
 let activeAlarmId = null;
 let audioContext = null;
 let ringIntervalId = null;
+let activeGameCleanup = null;
 
 function showView(name) {
   for (const [key, id] of Object.entries(views)) {
@@ -43,7 +44,6 @@ function showView(name) {
 }
 
 function startMinigameForAlarm(alarmId) {
-  // Placeholder: later this will render a selected minigame and start alarm audio.
   console.log("startMinigameForAlarm", alarmId);
   showView("minigame");
 }
@@ -131,7 +131,14 @@ function loadAlarms() {
         id: String(item.id || safeUuid()),
         time: String(item.time || ""),
         label: String(item.label || "Alarm"),
-        minigame: String(item.minigame || "Placeholder"),
+        minigame: (() => {
+          const rawType = String(item.minigame || "");
+          if (rawType === "flappy5") return "flappy10";
+          if (["flappy10", "math3", "memory4", "none"].includes(rawType)) {
+            return rawType;
+          }
+          return "flappy10";
+        })(),
         enabled: Boolean(item.enabled),
         lastTriggeredDate: item.lastTriggeredDate
           ? String(item.lastTriggeredDate)
@@ -155,6 +162,21 @@ function getNextAlarm(now) {
     }
   }
   return next;
+}
+
+function getMinigameLabel(type) {
+  switch (type) {
+    case "flappy10":
+      return "Flappy Sprint";
+    case "math3":
+      return "Quick Math";
+    case "memory4":
+      return "Memory Tap";
+    case "none":
+      return "No Game";
+    default:
+      return "Flappy Sprint";
+  }
 }
 
 function updateHeaderStatus(now) {
@@ -222,13 +244,19 @@ function stopRinging() {
 function openRingModal(alarm) {
   const modal = byId("ring-modal");
   const message = byId("ring-message");
-  message.textContent = `${formatTime24To12(alarm.time)} • ${alarm.label}`;
+  message.textContent = `${formatTime24To12(alarm.time)} • ${alarm.label} • ${getMinigameLabel(
+    alarm.minigame
+  )}`;
+  byId("ring-game-root").innerHTML = "";
+  byId("btn-start-challenge").textContent =
+    alarm.minigame === "none" ? "Dismiss Alarm" : "Start Challenge";
   modal.classList.remove("modal--hidden");
-  byId("btn-dismiss-alarm").focus();
+  byId("btn-start-challenge").focus();
 }
 
 function closeRingModal() {
   byId("ring-modal").classList.add("modal--hidden");
+  byId("ring-game-root").innerHTML = "";
 }
 
 function triggerAlarm(alarm, now, source = "schedule") {
@@ -244,6 +272,10 @@ function triggerAlarm(alarm, now, source = "schedule") {
 }
 
 function dismissActiveAlarm() {
+  if (activeGameCleanup) {
+    activeGameCleanup();
+    activeGameCleanup = null;
+  }
   activeAlarmId = null;
   stopRinging();
   closeRingModal();
@@ -252,6 +284,10 @@ function dismissActiveAlarm() {
 
 function snoozeActiveAlarm() {
   if (!activeAlarmId) return;
+  if (activeGameCleanup) {
+    activeGameCleanup();
+    activeGameCleanup = null;
+  }
   const alarm = alarms.find((item) => item.id === activeAlarmId);
   if (!alarm) return;
   alarm.snoozeUntil = Date.now() + SNOOZE_MS;
@@ -309,7 +345,7 @@ function renderAlarms() {
     .map((alarm) => {
       const timeText = formatTime24To12(alarm.time);
       const label = escapeHtml(alarm.label || "Alarm");
-      const minigame = escapeHtml(alarm.minigame || "Placeholder");
+      const minigame = escapeHtml(getMinigameLabel(alarm.minigame));
       const enabled = alarm.enabled ? "checked" : "";
       const hasFutureSnooze =
         alarm.enabled &&
@@ -364,12 +400,352 @@ function closeAlarmModal() {
   byId("btn-add-alarm").focus();
 }
 
+function mountFlappySprint(rootEl, onWin) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "game-stack";
+  wrapper.innerHTML = '<p class="muted">Click or press Space to flap.</p>';
+  const canvas = document.createElement("canvas");
+  canvas.width = 420;
+  canvas.height = 200;
+  wrapper.appendChild(canvas);
+  const restartButton = document.createElement("button");
+  restartButton.type = "button";
+  restartButton.className = "btn";
+  restartButton.textContent = "Retry";
+  restartButton.style.display = "none";
+  wrapper.appendChild(restartButton);
+  rootEl.replaceChildren(wrapper);
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return () => {};
+
+  let raf = 0;
+  let finished = false;
+  let birdY = 100;
+  let birdVy = 0;
+  const birdX = 80;
+  let passed = 0;
+  let gateX = 420;
+  let gateGapY = 100;
+  let isDead = false;
+
+  const flap = () => {
+    if (isDead) return;
+    birdVy = -4.8;
+  };
+  const onKey = (e) => {
+    if (e.code === "Space") {
+      e.preventDefault();
+      flap();
+    }
+  };
+
+  canvas.addEventListener("pointerdown", flap);
+  document.addEventListener("keydown", onKey);
+
+  const resetGate = () => {
+    gateX = 420;
+    gateGapY = 70 + Math.random() * 70;
+  };
+  const resetRun = () => {
+    birdY = 100;
+    birdVy = 0;
+    passed = 0;
+    gateX = 420;
+    gateGapY = 70 + Math.random() * 70;
+    isDead = false;
+    restartButton.style.display = "none";
+  };
+  const die = () => {
+    isDead = true;
+    restartButton.style.display = "inline-block";
+  };
+  restartButton.addEventListener("click", () => {
+    resetRun();
+  });
+
+  const loop = () => {
+    if (finished) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (!isDead) {
+      birdVy += 0.28;
+      birdY += birdVy;
+      gateX -= 2.25;
+    }
+
+    const gapHalf = 54;
+    const gateWidth = 52;
+    const topGateH = gateGapY - gapHalf;
+    const bottomGateY = gateGapY + gapHalf;
+
+    if (!isDead && gateX + gateWidth < birdX && gateX + gateWidth > birdX - 4) {
+      passed += 1;
+      if (passed >= 10) {
+        finished = true;
+        onWin();
+        return;
+      }
+    }
+
+    if (!isDead && gateX + gateWidth < 0) resetGate();
+
+    const birdR = 10;
+    const hitTop = birdY - birdR <= 0;
+    const hitBottom = birdY + birdR >= canvas.height;
+    const inGateX = birdX + birdR > gateX && birdX - birdR < gateX + gateWidth;
+    const inTopGate = birdY - birdR < topGateH;
+    const inBottomGate = birdY + birdR > bottomGateY;
+    const hitGate = inGateX && (inTopGate || inBottomGate);
+    if (!isDead && (hitTop || hitBottom || hitGate)) {
+      die();
+    }
+
+    ctx.fillStyle = "#b7c3ff";
+    ctx.fillRect(gateX, 0, gateWidth, topGateH);
+    ctx.fillRect(gateX, bottomGateY, gateWidth, canvas.height - bottomGateY);
+
+    ctx.beginPath();
+    ctx.fillStyle = "#ffd94f";
+    ctx.arc(birdX, birdY, birdR, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (isDead) {
+      ctx.fillStyle = "rgba(0,0,0,0.45)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "rgba(231,234,243,0.98)";
+      ctx.font = "bold 20px system-ui";
+      ctx.textAlign = "center";
+      ctx.fillText("You crashed", canvas.width / 2, canvas.height / 2 - 8);
+      ctx.font = "14px system-ui";
+      ctx.fillText("Press Retry", canvas.width / 2, canvas.height / 2 + 18);
+      ctx.textAlign = "start";
+    }
+
+    raf = requestAnimationFrame(loop);
+  };
+  loop();
+
+  return () => {
+    finished = true;
+    cancelAnimationFrame(raf);
+    canvas.removeEventListener("pointerdown", flap);
+    document.removeEventListener("keydown", onKey);
+    restartButton.remove();
+    rootEl.innerHTML = "";
+  };
+}
+
+function mountQuickMath(rootEl, onWin) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "game-stack";
+  wrapper.innerHTML = `
+    <p class="muted">Solve the prompt.</p>
+    <p id="math-question"></p>
+    <input id="math-input" class="field__control" type="number" />
+    <button id="math-submit" class="btn btn--primary" type="button">Answer</button>
+    <p id="math-status" class="muted"></p>
+  `;
+  rootEl.replaceChildren(wrapper);
+
+  const q = wrapper.querySelector("#math-question");
+  const input = wrapper.querySelector("#math-input");
+  const submit = wrapper.querySelector("#math-submit");
+  const status = wrapper.querySelector("#math-status");
+  if (!(q && input && submit && status)) return () => {};
+
+  let solved = 0;
+  let a = 0;
+  let b = 0;
+  let op = "+";
+  let answer = 0;
+  let done = false;
+
+  const next = () => {
+    a = Math.floor(1 + Math.random() * 9);
+    b = Math.floor(1 + Math.random() * 9);
+    op = Math.random() < 0.5 ? "+" : "-";
+    if (op === "-" && b > a) [a, b] = [b, a];
+    answer = op === "+" ? a + b : a - b;
+    q.textContent = `${a} ${op} ${b} = ?`;
+    status.textContent = "";
+    input.value = "";
+    input.focus();
+  };
+  const onSubmit = () => {
+    if (done) return;
+    if (Number(input.value) === answer) {
+      solved += 1;
+      if (solved >= 3) {
+        done = true;
+        onWin();
+        return;
+      }
+      next();
+    } else {
+      solved = Math.max(0, solved - 1);
+      status.textContent = "Wrong. Try another.";
+      next();
+    }
+  };
+
+  submit.addEventListener("click", onSubmit);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") onSubmit();
+  });
+  next();
+
+  return () => {
+    done = true;
+    rootEl.innerHTML = "";
+  };
+}
+
+function mountMemoryTap(rootEl, onWin) {
+  const colors = ["#4f83ff", "#ff7f7f", "#7ee787", "#ffd166"];
+  const wrapper = document.createElement("div");
+  wrapper.className = "game-stack";
+  wrapper.innerHTML = `
+    <p class="muted">Repeat the pattern.</p>
+    <p id="mem-status" class="muted">Watch...</p>
+    <div class="game-pad-grid"></div>
+  `;
+  rootEl.replaceChildren(wrapper);
+  const grid = wrapper.querySelector(".game-pad-grid");
+  const status = wrapper.querySelector("#mem-status");
+  if (!(grid && status)) return () => {};
+
+  const pads = colors.map((color, idx) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "game-pad";
+    btn.style.background = color;
+    btn.dataset.idx = String(idx);
+    btn.dataset.active = "false";
+    grid.appendChild(btn);
+    return btn;
+  });
+
+  let round = 1;
+  const maxRound = 4;
+  let sequence = [];
+  let userIndex = 0;
+  let locked = true;
+  let cancelled = false;
+  let timeouts = [];
+
+  const clearTimers = () => {
+    timeouts.forEach((id) => clearTimeout(id));
+    timeouts = [];
+  };
+
+  const flash = (idx, delay) => {
+    timeouts.push(
+      setTimeout(() => {
+        const pad = pads[idx];
+        pad.dataset.active = "true";
+        setTimeout(() => {
+          pad.dataset.active = "false";
+        }, 220);
+      }, delay)
+    );
+  };
+
+  const showSequence = () => {
+    locked = true;
+    status.textContent = "Watch...";
+    clearTimers();
+    sequence.forEach((idx, i) => flash(idx, i * 360));
+    timeouts.push(
+      setTimeout(() => {
+        locked = false;
+        userIndex = 0;
+        status.textContent = "Your turn";
+      }, sequence.length * 360 + 120)
+    );
+  };
+
+  const nextRound = () => {
+    if (cancelled) return;
+    if (round > maxRound) {
+      onWin();
+      return;
+    }
+    sequence = Array.from({ length: round + 1 }, () =>
+      Math.floor(Math.random() * 4)
+    );
+    showSequence();
+  };
+
+  const onPad = (e) => {
+    if (locked) return;
+    const target = e.currentTarget;
+    const idx = Number(target.dataset.idx);
+    if (idx !== sequence[userIndex]) {
+      status.textContent = "Wrong pattern. Restarting round.";
+      userIndex = 0;
+      locked = true;
+      timeouts.push(setTimeout(showSequence, 500));
+      return;
+    }
+    userIndex += 1;
+    if (userIndex >= sequence.length) {
+      round += 1;
+      locked = true;
+      timeouts.push(setTimeout(nextRound, 420));
+    }
+  };
+
+  pads.forEach((pad) => pad.addEventListener("click", onPad));
+  nextRound();
+
+  return () => {
+    cancelled = true;
+    clearTimers();
+    pads.forEach((pad) => pad.removeEventListener("click", onPad));
+    rootEl.innerHTML = "";
+  };
+}
+
+function startChallengeForActiveAlarm() {
+  if (!activeAlarmId) return;
+  const alarm = alarms.find((item) => item.id === activeAlarmId);
+  if (!alarm) return;
+  if (activeGameCleanup) {
+    activeGameCleanup();
+    activeGameCleanup = null;
+  }
+  const root = byId("ring-game-root");
+  const onWin = () => {
+    if (activeGameCleanup) {
+      activeGameCleanup();
+      activeGameCleanup = null;
+    }
+    dismissActiveAlarm();
+  };
+  switch (alarm.minigame) {
+    case "none":
+      dismissActiveAlarm();
+      break;
+    case "math3":
+      activeGameCleanup = mountQuickMath(root, onWin);
+      break;
+    case "memory4":
+      activeGameCleanup = mountMemoryTap(root, onWin);
+      break;
+    case "flappy10":
+    default:
+      activeGameCleanup = mountFlappySprint(root, onWin);
+      break;
+  }
+}
+
 function init() {
   const addAlarmButton = byId("btn-add-alarm");
   const form = byId("alarm-form");
   const modal = byId("alarm-modal");
   const alarmList = byId("alarm-items");
-  const dismissButton = byId("btn-dismiss-alarm");
+  const startChallengeButton = byId("btn-start-challenge");
   const snoozeButton = byId("btn-snooze-alarm");
 
   alarms = loadAlarms();
@@ -387,7 +763,7 @@ function init() {
     const isAlarmModalOpen = !byId("alarm-modal").classList.contains("modal--hidden");
     if (isAlarmModalOpen) closeAlarmModal();
     const isRingModalOpen = !byId("ring-modal").classList.contains("modal--hidden");
-    if (isRingModalOpen) dismissActiveAlarm();
+    if (isRingModalOpen) snoozeActiveAlarm();
   });
 
   alarmList.addEventListener("change", (e) => {
@@ -415,9 +791,7 @@ function init() {
 
     alarms = alarms.filter((alarm) => alarm.id !== id);
     if (activeAlarmId === id) {
-      activeAlarmId = null;
-      stopRinging();
-      closeRingModal();
+      dismissActiveAlarm();
     }
     saveAlarms();
     renderAlarms();
@@ -429,8 +803,7 @@ function init() {
     const fd = new FormData(form);
     const time = String(fd.get("time") || "").trim();
     const label = String(fd.get("label") || "").trim() || "Alarm";
-    const minigame =
-      String(fd.get("minigame") || "").trim() || "Placeholder";
+    const minigame = String(fd.get("minigame") || "").trim() || "flappy10";
 
     if (!time) return;
 
@@ -438,7 +811,9 @@ function init() {
       id: safeUuid(),
       time,
       label,
-      minigame,
+      minigame: ["flappy10", "math3", "memory4", "none"].includes(minigame)
+        ? minigame
+        : "flappy10",
       enabled: true,
       lastTriggeredDate: null,
       snoozeUntil: null,
@@ -451,7 +826,7 @@ function init() {
     updateHeaderStatus(new Date());
   });
 
-  dismissButton.addEventListener("click", dismissActiveAlarm);
+  startChallengeButton.addEventListener("click", startChallengeForActiveAlarm);
   snoozeButton.addEventListener("click", snoozeActiveAlarm);
 
   showView("list");

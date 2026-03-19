@@ -80,8 +80,10 @@
           <label class="field">
             <span class="field__label">Minigame</span>
             <select name="minigame" class="field__control">
-              <option value="" selected disabled>Select a minigame</option>
-              <option value="placeholder">Placeholder</option>
+              <option value="flappy10" selected>Flappy Sprint</option>
+              <option value="math3">Quick Math</option>
+              <option value="memory4">Memory Tap</option>
+              <option value="none">No Game</option>
             </select>
           </label>
 
@@ -108,12 +110,13 @@
           <h2 id="ring-title" class="view__title">Alarm Ringing</h2>
         </div>
         <p id="ring-message" class="muted">Wake up.</p>
+        <div id="ring-game-root" class="ring-game-root"></div>
         <div class="form__actions">
+          <button type="button" id="btn-start-challenge" class="btn btn--primary">
+            Start Challenge
+          </button>
           <button type="button" id="btn-snooze-alarm" class="btn">
             Snooze 5 min
-          </button>
-          <button type="button" id="btn-dismiss-alarm" class="btn btn--primary">
-            Dismiss
           </button>
         </div>
       </div>
