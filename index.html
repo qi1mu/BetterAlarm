@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Better Alarm</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script defer src="./app.js"></script>
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="app-header__inner">
+        <h1 class="app-title">Better Alarm</h1>
+        <div id="app-status" class="app-status" aria-label="Status"></div>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <section id="view-list" class="view" aria-label="Alarms">
+        <div class="view__header">
+          <h2 class="view__title">Alarms</h2>
+          <button type="button" id="btn-add-alarm" class="btn btn--primary">
+            Add alarm
+          </button>
+        </div>
+
+        <div id="alarm-list" class="alarm-list" aria-label="Alarm list">
+          <p id="alarm-empty" class="muted alarm-empty">No alarms yet.</p>
+          <ul id="alarm-items" class="alarm-items" aria-label="Alarms"></ul>
+        </div>
+      </section>
+
+      <section
+        id="view-minigame"
+        class="view view--hidden"
+        aria-label="Minigame"
+      >
+        <div class="view__header">
+          <h2 class="view__title">Minigame</h2>
+        </div>
+        <div id="minigame-root" class="minigame-root">
+          <p class="muted">Minigame goes here.</p>
+        </div>
+      </section>
+    </main>
+
+    <div
+      id="alarm-modal"
+      class="modal modal--hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="alarm-modal-title"
+    >
+      <div class="modal__backdrop" data-modal-close></div>
+      <div class="modal__dialog" role="document">
+        <div class="modal__header">
+          <h2 id="alarm-modal-title" class="view__title">Alarm</h2>
+          <button
+            type="button"
+            id="btn-modal-close"
+            class="btn"
+            aria-label="Close"
+            data-modal-close
+          >
+            Close
+          </button>
+        </div>
+
+        <form id="alarm-form" class="form">
+          <label class="field">
+            <span class="field__label">Time</span>
+            <input type="time" name="time" class="field__control" required />
+          </label>
+
+          <label class="field">
+            <span class="field__label">Label</span>
+            <input type="text" name="label" class="field__control" />
+          </label>
+
+          <label class="field">
+            <span class="field__label">Minigame</span>
+            <select name="minigame" class="field__control">
+              <option value="" selected disabled>Select a minigame</option>
+              <option value="placeholder">Placeholder</option>
+            </select>
+          </label>
+
+          <div class="form__actions">
+            <button type="button" id="btn-cancel" class="btn" data-modal-close>
+              Cancel
+            </button>
+            <button type="submit" class="btn btn--primary">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div
+      id="ring-modal"
+      class="modal modal--hidden"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="ring-title"
+    >
+      <div class="modal__backdrop"></div>
+      <div class="modal__dialog">
+        <div class="modal__header">
+          <h2 id="ring-title" class="view__title">Alarm Ringing</h2>
+        </div>
+        <p id="ring-message" class="muted">Wake up.</p>
+        <div class="form__actions">
+          <button type="button" id="btn-dismiss-alarm" class="btn btn--primary">
+            Dismiss
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <footer class="app-footer">
+      <div class="app-footer__inner">
+        <small class="muted">Prototype skeleton — more coming later.</small>
+      </div>
+    </footer>
+  </body>
+</html>
