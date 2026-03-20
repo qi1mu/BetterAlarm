@@ -23,10 +23,18 @@ function escapeHtml(text) {
   });
 }
 
-const views = {
-  list: "view-list",
-  minigame: "view-minigame",
+const pages = {
+  alarms: "page-alarms",
+  stopwatch: "page-stopwatch",
+  timer: "page-timer",
+  minigames: "page-minigames",
 };
+
+const GAME_START_DELAY_MIN_MS = 1000;
+const GAME_START_DELAY_MAX_MS = 2000;
+const FLAPPY_GATES_TO_WIN = 5;
+const MATH_REQUIRED_CORRECT = 5;
+const MEMORY_MAX_ROUND = 4;
 
 const STORAGE_KEY = "better-alarm.alarms.v1";
 const SNOOZE_MS = 5 * 60 * 1000;
@@ -35,17 +43,103 @@ let activeAlarmId = null;
 let audioContext = null;
 let ringIntervalId = null;
 let activeGameCleanup = null;
+let editingAlarmId = null;
+let freeplayCleanup = null;
 
-function showView(name) {
-  for (const [key, id] of Object.entries(views)) {
-    const el = byId(id);
-    el.classList.toggle("view--hidden", key !== name);
+let swRunning = false;
+let swBaseElapsed = 0;
+let swStartPerf = 0;
+let swRaf = 0;
+const swLaps = [];
+
+let timerTotalMs = 5 * 60 * 1000;
+let timerRemainingMs = 5 * 60 * 1000;
+let timerRunning = false;
+let timerEndAt = 0;
+let timerTickId = null;
+let timerFinished = false;
+let timerBeepId = null;
+
+function showPage(name) {
+  if (name !== "minigames" && freeplayCleanup) {
+    freeplayCleanup();
+    freeplayCleanup = null;
   }
+  for (const [key, id] of Object.entries(pages)) {
+    const el = byId(id);
+    el.classList.toggle("page--hidden", key !== name);
+  }
+  document.querySelectorAll(".nav-tab").forEach((btn) => {
+    if (!(btn instanceof HTMLElement)) return;
+    const isActive = btn.dataset.page === name;
+    btn.classList.toggle("nav-tab--active", isActive);
+  });
 }
 
 function startMinigameForAlarm(alarmId) {
   console.log("startMinigameForAlarm", alarmId);
-  showView("minigame");
+  showPage("minigames");
+}
+
+function formatStopwatchMs(totalMs) {
+  const ms = Math.floor(totalMs % 1000);
+  let rest = Math.floor(totalMs / 1000);
+  const s = rest % 60;
+  rest = Math.floor(rest / 60);
+  const m = rest % 60;
+  const h = Math.floor(rest / 60);
+  const pad = (n, w) => String(n).padStart(w, "0");
+  return `${pad(h, 2)}:${pad(m, 2)}:${pad(s, 2)}.${pad(ms, 3)}`;
+}
+
+function formatTimerRemainingMs(ms) {
+  if (ms < 0) ms = 0;
+  const whole = Math.floor(ms);
+  const frac = whole % 1000;
+  let rest = Math.floor(whole / 1000);
+  const s = rest % 60;
+  rest = Math.floor(rest / 60);
+  const m = rest % 60;
+  const h = Math.floor(rest / 60);
+  const pad = (n, w) => String(n).padStart(w, "0");
+  if (h > 0) {
+    return `${h}:${pad(m, 2)}:${pad(s, 2)}.${pad(frac, 3)}`;
+  }
+  return `${pad(m, 2)}:${pad(s, 2)}.${pad(frac, 3)}`;
+}
+
+/**
+ * Runs 1–2s countdown in rootEl, then calls startMount().
+ * Returns teardown that clears timers and empties root if still in countdown.
+ */
+function runGameStartCountdown(rootEl, startMount) {
+  const delayMs =
+    GAME_START_DELAY_MIN_MS +
+    Math.random() * (GAME_START_DELAY_MAX_MS - GAME_START_DELAY_MIN_MS);
+  const endAt = Date.now() + delayMs;
+  const msg = document.createElement("p");
+  msg.className = "muted game-countdown";
+  msg.id = "game-countdown";
+  msg.textContent = "Starting…";
+  rootEl.replaceChildren(msg);
+
+  const tick = () => {
+    const left = Math.max(0, endAt - Date.now());
+    const sec = Math.ceil(left / 1000);
+    msg.textContent = sec > 0 ? `Starting in ${sec}…` : "Go!";
+  };
+  tick();
+  const intervalId = window.setInterval(tick, 120);
+
+  const timeoutId = window.setTimeout(() => {
+    window.clearInterval(intervalId);
+    startMount();
+  }, delayMs);
+
+  return () => {
+    window.clearInterval(intervalId);
+    window.clearTimeout(timeoutId);
+  };
 }
 
 function formatTime24To12(time24) {
@@ -371,6 +465,9 @@ function renderAlarms() {
             </div>
           </div>
           <div class="alarm-item__actions">
+            <button type="button" class="btn" data-alarm-edit>
+              Edit
+            </button>
             <button type="button" class="btn btn--danger" data-alarm-delete>
               Delete
             </button>
@@ -389,6 +486,18 @@ function renderAlarms() {
 
 function openAlarmModal() {
   const modal = byId("alarm-modal");
+  const title = byId("alarm-modal-title");
+  if (editingAlarmId) {
+    const alarm = alarms.find((item) => item.id === editingAlarmId);
+    if (alarm) {
+      byId("alarm-form").elements.time.value = alarm.time;
+      byId("alarm-form").elements.label.value = alarm.label || "";
+      byId("alarm-form").elements.minigame.value = alarm.minigame || "flappy10";
+      title.textContent = "Edit Alarm";
+    }
+  } else {
+    title.textContent = "Alarm";
+  }
   modal.classList.remove("modal--hidden");
   byId("alarm-form").querySelector('input[name="time"]')?.focus();
   ensureAudioContext();
@@ -397,13 +506,17 @@ function openAlarmModal() {
 function closeAlarmModal() {
   const modal = byId("alarm-modal");
   modal.classList.add("modal--hidden");
+  editingAlarmId = null;
+  byId("alarm-form").reset();
+  byId("alarm-modal-title").textContent = "Alarm";
   byId("btn-add-alarm").focus();
 }
 
 function mountFlappySprint(rootEl, onWin) {
   const wrapper = document.createElement("div");
   wrapper.className = "game-stack";
-  wrapper.innerHTML = '<p class="muted">Click or press Space to flap.</p>';
+  wrapper.innerHTML =
+    '<p id="flappy-progress" class="game-progress"></p><p class="muted">Click or press Space to flap.</p>';
   const canvas = document.createElement("canvas");
   canvas.width = 420;
   canvas.height = 200;
@@ -416,6 +529,13 @@ function mountFlappySprint(rootEl, onWin) {
   wrapper.appendChild(restartButton);
   rootEl.replaceChildren(wrapper);
 
+  const progressEl = wrapper.querySelector("#flappy-progress");
+  const updateProgress = () => {
+    if (progressEl) {
+      progressEl.textContent = `Gates: ${passed}/${FLAPPY_GATES_TO_WIN}`;
+    }
+  };
+
   const ctx = canvas.getContext("2d");
   if (!ctx) return () => {};
 
@@ -427,7 +547,10 @@ function mountFlappySprint(rootEl, onWin) {
   let passed = 0;
   let gateX = 420;
   let gateGapY = 100;
+  let scoredThisGate = false;
   let isDead = false;
+  let lives = 3;
+  let invulnFrames = 0;
 
   const flap = () => {
     if (isDead) return;
@@ -446,15 +569,20 @@ function mountFlappySprint(rootEl, onWin) {
   const resetGate = () => {
     gateX = 420;
     gateGapY = 70 + Math.random() * 70;
+    scoredThisGate = false;
   };
   const resetRun = () => {
     birdY = 100;
     birdVy = 0;
     passed = 0;
+    lives = 3;
+    invulnFrames = 0;
     gateX = 420;
     gateGapY = 70 + Math.random() * 70;
+    scoredThisGate = false;
     isDead = false;
     restartButton.style.display = "none";
+    updateProgress();
   };
   const die = () => {
     isDead = true;
@@ -464,6 +592,8 @@ function mountFlappySprint(rootEl, onWin) {
     resetRun();
   });
 
+  updateProgress();
+
   const loop = () => {
     if (finished) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -472,6 +602,7 @@ function mountFlappySprint(rootEl, onWin) {
       birdVy += 0.28;
       birdY += birdVy;
       gateX -= 2.25;
+      if (invulnFrames > 0) invulnFrames -= 1;
     }
 
     const gapHalf = 54;
@@ -479,9 +610,16 @@ function mountFlappySprint(rootEl, onWin) {
     const topGateH = gateGapY - gapHalf;
     const bottomGateY = gateGapY + gapHalf;
 
-    if (!isDead && gateX + gateWidth < birdX && gateX + gateWidth > birdX - 4) {
+    const birdR = 10;
+    if (
+      !isDead &&
+      !scoredThisGate &&
+      gateX + gateWidth < birdX - birdR
+    ) {
+      scoredThisGate = true;
       passed += 1;
-      if (passed >= 10) {
+      updateProgress();
+      if (passed >= FLAPPY_GATES_TO_WIN) {
         finished = true;
         onWin();
         return;
@@ -490,15 +628,24 @@ function mountFlappySprint(rootEl, onWin) {
 
     if (!isDead && gateX + gateWidth < 0) resetGate();
 
-    const birdR = 10;
     const hitTop = birdY - birdR <= 0;
     const hitBottom = birdY + birdR >= canvas.height;
     const inGateX = birdX + birdR > gateX && birdX - birdR < gateX + gateWidth;
     const inTopGate = birdY - birdR < topGateH;
     const inBottomGate = birdY + birdR > bottomGateY;
     const hitGate = inGateX && (inTopGate || inBottomGate);
-    if (!isDead && (hitTop || hitBottom || hitGate)) {
-      die();
+    if (!isDead && invulnFrames <= 0 && (hitTop || hitBottom || hitGate)) {
+      lives -= 1;
+      if (lives <= 0) {
+        die();
+      } else {
+        birdY = 100;
+        birdVy = 0;
+        gateX = 420;
+        gateGapY = 70 + Math.random() * 70;
+        scoredThisGate = false;
+        invulnFrames = 95;
+      }
     }
 
     ctx.fillStyle = "#b7c3ff";
@@ -506,9 +653,14 @@ function mountFlappySprint(rootEl, onWin) {
     ctx.fillRect(gateX, bottomGateY, gateWidth, canvas.height - bottomGateY);
 
     ctx.beginPath();
-    ctx.fillStyle = "#ffd94f";
+    ctx.fillStyle = invulnFrames > 0 ? "#ffe693" : "#ffd94f";
     ctx.arc(birdX, birdY, birdR, 0, Math.PI * 2);
     ctx.fill();
+
+    ctx.fillStyle = "rgba(231,234,243,0.9)";
+    ctx.font = "13px system-ui";
+    ctx.fillText(`Lives: ${lives}`, 12, 20);
+    updateProgress();
 
     if (isDead) {
       ctx.fillStyle = "rgba(0,0,0,0.45)";
@@ -540,6 +692,7 @@ function mountQuickMath(rootEl, onWin) {
   const wrapper = document.createElement("div");
   wrapper.className = "game-stack";
   wrapper.innerHTML = `
+    <p id="math-progress" class="game-progress"></p>
     <p class="muted">Solve the prompt.</p>
     <p id="math-question"></p>
     <input id="math-input" class="field__control" type="number" />
@@ -552,6 +705,7 @@ function mountQuickMath(rootEl, onWin) {
   const input = wrapper.querySelector("#math-input");
   const submit = wrapper.querySelector("#math-submit");
   const status = wrapper.querySelector("#math-status");
+  const progressEl = wrapper.querySelector("#math-progress");
   if (!(q && input && submit && status)) return () => {};
 
   let solved = 0;
@@ -560,23 +714,50 @@ function mountQuickMath(rootEl, onWin) {
   let op = "+";
   let answer = 0;
   let done = false;
+  const requiredCorrect = MATH_REQUIRED_CORRECT;
+
+  const updateMathProgress = () => {
+    if (progressEl) {
+      progressEl.textContent = `Correct: ${solved}/${requiredCorrect}`;
+    }
+  };
+
+  const pickOp = () => {
+    const r = Math.random();
+    if (r < 0.55) return "*";
+    if (r < 0.775) return "+";
+    return "-";
+  };
 
   const next = () => {
-    a = Math.floor(1 + Math.random() * 9);
-    b = Math.floor(1 + Math.random() * 9);
-    op = Math.random() < 0.5 ? "+" : "-";
+    op = pickOp();
+    if (op === "*") {
+      a = Math.floor(4 + Math.random() * 9);
+      b = Math.floor(4 + Math.random() * 9);
+      if (Math.random() < 0.35) {
+        a = Math.floor(6 + Math.random() * 7);
+        b = Math.floor(6 + Math.random() * 7);
+      }
+    } else {
+      a = Math.floor(12 + Math.random() * 35);
+      b = Math.floor(3 + Math.random() * 22);
+    }
     if (op === "-" && b > a) [a, b] = [b, a];
-    answer = op === "+" ? a + b : a - b;
+    if (op === "+") answer = a + b;
+    if (op === "-") answer = a - b;
+    if (op === "*") answer = a * b;
     q.textContent = `${a} ${op} ${b} = ?`;
     status.textContent = "";
     input.value = "";
     input.focus();
+    updateMathProgress();
   };
   const onSubmit = () => {
     if (done) return;
     if (Number(input.value) === answer) {
       solved += 1;
-      if (solved >= 3) {
+      updateMathProgress();
+      if (solved >= requiredCorrect) {
         done = true;
         onWin();
         return;
@@ -584,6 +765,7 @@ function mountQuickMath(rootEl, onWin) {
       next();
     } else {
       solved = Math.max(0, solved - 1);
+      updateMathProgress();
       status.textContent = "Wrong. Try another.";
       next();
     }
@@ -593,6 +775,7 @@ function mountQuickMath(rootEl, onWin) {
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") onSubmit();
   });
+  updateMathProgress();
   next();
 
   return () => {
@@ -606,6 +789,7 @@ function mountMemoryTap(rootEl, onWin) {
   const wrapper = document.createElement("div");
   wrapper.className = "game-stack";
   wrapper.innerHTML = `
+    <p id="mem-progress" class="game-progress"></p>
     <p class="muted">Repeat the pattern.</p>
     <p id="mem-status" class="muted">Watch...</p>
     <div class="game-pad-grid"></div>
@@ -613,21 +797,31 @@ function mountMemoryTap(rootEl, onWin) {
   rootEl.replaceChildren(wrapper);
   const grid = wrapper.querySelector(".game-pad-grid");
   const status = wrapper.querySelector("#mem-status");
+  const memProgress = wrapper.querySelector("#mem-progress");
   if (!(grid && status)) return () => {};
 
+  let round = 1;
+  const maxRound = MEMORY_MAX_ROUND;
+
+  const updateMemProgress = () => {
+    if (memProgress) {
+      memProgress.textContent = `Round ${Math.min(round, MEMORY_MAX_ROUND)}/${MEMORY_MAX_ROUND}`;
+    }
+  };
+
+  const padOffColor = "#111111";
   const pads = colors.map((color, idx) => {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "game-pad";
-    btn.style.background = color;
+    btn.style.background = padOffColor;
+    btn.dataset.color = color;
     btn.dataset.idx = String(idx);
     btn.dataset.active = "false";
     grid.appendChild(btn);
     return btn;
   });
 
-  let round = 1;
-  const maxRound = 4;
   let sequence = [];
   let userIndex = 0;
   let locked = true;
@@ -644,8 +838,10 @@ function mountMemoryTap(rootEl, onWin) {
       setTimeout(() => {
         const pad = pads[idx];
         pad.dataset.active = "true";
+        pad.style.background = pad.dataset.color || padOffColor;
         setTimeout(() => {
           pad.dataset.active = "false";
+          pad.style.background = padOffColor;
         }, 220);
       }, delay)
     );
@@ -654,6 +850,7 @@ function mountMemoryTap(rootEl, onWin) {
   const showSequence = () => {
     locked = true;
     status.textContent = "Watch...";
+    updateMemProgress();
     clearTimers();
     sequence.forEach((idx, i) => flash(idx, i * 360));
     timeouts.push(
@@ -671,6 +868,7 @@ function mountMemoryTap(rootEl, onWin) {
       onWin();
       return;
     }
+    updateMemProgress();
     sequence = Array.from({ length: round + 1 }, () =>
       Math.floor(Math.random() * 4)
     );
@@ -681,6 +879,10 @@ function mountMemoryTap(rootEl, onWin) {
     if (locked) return;
     const target = e.currentTarget;
     const idx = Number(target.dataset.idx);
+    target.style.background = target.dataset.color || padOffColor;
+    setTimeout(() => {
+      target.style.background = padOffColor;
+    }, 120);
     if (idx !== sequence[userIndex]) {
       status.textContent = "Wrong pattern. Restarting round.";
       userIndex = 0;
@@ -697,6 +899,7 @@ function mountMemoryTap(rootEl, onWin) {
   };
 
   pads.forEach((pad) => pad.addEventListener("click", onPad));
+  updateMemProgress();
   nextRound();
 
   return () => {
@@ -723,21 +926,187 @@ function startChallengeForActiveAlarm() {
     }
     dismissActiveAlarm();
   };
-  switch (alarm.minigame) {
-    case "none":
-      dismissActiveAlarm();
-      break;
-    case "math3":
-      activeGameCleanup = mountQuickMath(root, onWin);
-      break;
-    case "memory4":
-      activeGameCleanup = mountMemoryTap(root, onWin);
-      break;
-    case "flappy10":
-    default:
-      activeGameCleanup = mountFlappySprint(root, onWin);
-      break;
+  if (alarm.minigame === "none") {
+    dismissActiveAlarm();
+    return;
   }
+
+  let countdownTeardown = null;
+  let gameTeardown = null;
+  const stopChallengeUi = () => {
+    if (countdownTeardown) {
+      countdownTeardown();
+      countdownTeardown = null;
+    }
+    if (gameTeardown) {
+      gameTeardown();
+      gameTeardown = null;
+    }
+    root.innerHTML = "";
+  };
+
+  countdownTeardown = runGameStartCountdown(root, () => {
+    countdownTeardown = null;
+    switch (alarm.minigame) {
+      case "math3":
+        gameTeardown = mountQuickMath(root, onWin);
+        break;
+      case "memory4":
+        gameTeardown = mountMemoryTap(root, onWin);
+        break;
+      case "flappy10":
+      default:
+        gameTeardown = mountFlappySprint(root, onWin);
+        break;
+    }
+  });
+
+  activeGameCleanup = stopChallengeUi;
+}
+
+function stopTimerBeeps() {
+  if (timerBeepId !== null) {
+    clearInterval(timerBeepId);
+    timerBeepId = null;
+  }
+}
+
+function startTimerBeeps() {
+  stopTimerBeeps();
+  beepOnce();
+  timerBeepId = setInterval(beepOnce, 850);
+}
+
+function swCurrentMs() {
+  let ms = swBaseElapsed;
+  if (swRunning) {
+    ms += performance.now() - swStartPerf;
+  }
+  return ms;
+}
+
+function swUpdateDisplay() {
+  byId("stopwatch-display").textContent = formatStopwatchMs(swCurrentMs());
+}
+
+function swLoop() {
+  swUpdateDisplay();
+  if (swRunning) {
+    swRaf = requestAnimationFrame(swLoop);
+  }
+}
+
+function renderSwLaps() {
+  const ul = byId("stopwatch-laps");
+  ul.innerHTML = swLaps
+    .map(
+      (lap, i) =>
+        `<li class="lap-item"><span class="lap-num">#${i + 1}</span> ${formatStopwatchMs(
+          lap
+        )}</li>`
+    )
+    .join("");
+}
+
+function timerUpdateDisplay() {
+  byId("timer-display").textContent = formatTimerRemainingMs(timerRemainingMs);
+}
+
+function timerTick() {
+  if (!timerRunning) return;
+  timerRemainingMs = Math.max(0, timerEndAt - Date.now());
+  timerUpdateDisplay();
+  if (timerRemainingMs <= 0) {
+    timerRunning = false;
+    timerFinished = true;
+    if (timerTickId !== null) {
+      clearInterval(timerTickId);
+      timerTickId = null;
+    }
+    byId("btn-timer-start").disabled = false;
+    byId("btn-timer-pause").disabled = true;
+    byId("timer-status").textContent = "Time's up";
+    startTimerBeeps();
+    ensureAudioContext();
+  }
+}
+
+function readCustomTimerMs() {
+  const m = Math.max(0, Number(byId("timer-min").value) || 0);
+  const s = Math.max(0, Math.min(59, Number(byId("timer-sec").value) || 0));
+  return (m * 60 + s) * 1000;
+}
+
+function syncTimerInputsFromMs(ms) {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  byId("timer-min").value = String(Math.floor(totalSec / 60));
+  byId("timer-sec").value = String(totalSec % 60);
+}
+
+function applyTimerPresetSeconds(sec) {
+  stopTimerBeeps();
+  if (timerTickId !== null) {
+    clearInterval(timerTickId);
+    timerTickId = null;
+  }
+  timerRunning = false;
+  timerFinished = false;
+  timerTotalMs = sec * 1000;
+  timerRemainingMs = timerTotalMs;
+  syncTimerInputsFromMs(timerTotalMs);
+  timerUpdateDisplay();
+  byId("timer-status").textContent = "";
+  byId("btn-timer-start").disabled = false;
+  byId("btn-timer-pause").disabled = true;
+}
+
+function startFreeplay(type) {
+  if (freeplayCleanup) {
+    freeplayCleanup();
+    freeplayCleanup = null;
+  }
+  const root = byId("freeplay-root");
+  root.innerHTML = "";
+
+  const onDone = () => {
+    if (freeplayCleanup) {
+      freeplayCleanup();
+      freeplayCleanup = null;
+    }
+    root.innerHTML = '<p class="muted">Completed.</p>';
+  };
+
+  let countdownTeardown = null;
+  let gameTeardown = null;
+  const stop = () => {
+    if (countdownTeardown) {
+      countdownTeardown();
+      countdownTeardown = null;
+    }
+    if (gameTeardown) {
+      gameTeardown();
+      gameTeardown = null;
+    }
+    root.innerHTML = "";
+  };
+
+  countdownTeardown = runGameStartCountdown(root, () => {
+    countdownTeardown = null;
+    switch (type) {
+      case "math3":
+        gameTeardown = mountQuickMath(root, onDone);
+        break;
+      case "memory4":
+        gameTeardown = mountMemoryTap(root, onDone);
+        break;
+      case "flappy10":
+      default:
+        gameTeardown = mountFlappySprint(root, onDone);
+        break;
+    }
+  });
+
+  freeplayCleanup = stop;
 }
 
 function init() {
@@ -750,7 +1119,18 @@ function init() {
 
   alarms = loadAlarms();
 
-  addAlarmButton.addEventListener("click", openAlarmModal);
+  document.querySelectorAll(".nav-tab").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn instanceof HTMLElement && btn.dataset.page) {
+        showPage(btn.dataset.page);
+      }
+    });
+  });
+
+  addAlarmButton.addEventListener("click", () => {
+    editingAlarmId = null;
+    openAlarmModal();
+  });
 
   modal.addEventListener("click", (e) => {
     const target = e.target;
@@ -783,11 +1163,17 @@ function init() {
   alarmList.addEventListener("click", (e) => {
     const target = e.target;
     if (!(target instanceof Element)) return;
-    if (!target.closest("[data-alarm-delete]")) return;
     const row = target.closest("[data-alarm-id]");
     if (!(row instanceof HTMLElement)) return;
     const id = row.dataset.alarmId;
     if (!id) return;
+
+    if (target.closest("[data-alarm-edit]")) {
+      editingAlarmId = id;
+      openAlarmModal();
+      return;
+    }
+    if (!target.closest("[data-alarm-delete]")) return;
 
     alarms = alarms.filter((alarm) => alarm.id !== id);
     if (activeAlarmId === id) {
@@ -807,17 +1193,30 @@ function init() {
 
     if (!time) return;
 
-    alarms.push({
-      id: safeUuid(),
-      time,
-      label,
-      minigame: ["flappy10", "math3", "memory4", "none"].includes(minigame)
-        ? minigame
-        : "flappy10",
-      enabled: true,
-      lastTriggeredDate: null,
-      snoozeUntil: null,
-    });
+    const safeMinigame = ["flappy10", "math3", "memory4", "none"].includes(
+      minigame
+    )
+      ? minigame
+      : "flappy10";
+
+    if (editingAlarmId) {
+      const alarm = alarms.find((item) => item.id === editingAlarmId);
+      if (alarm) {
+        alarm.time = time;
+        alarm.label = label;
+        alarm.minigame = safeMinigame;
+      }
+    } else {
+      alarms.push({
+        id: safeUuid(),
+        time,
+        label,
+        minigame: safeMinigame,
+        enabled: true,
+        lastTriggeredDate: null,
+        snoozeUntil: null,
+      });
+    }
 
     form.reset();
     saveAlarms();
@@ -829,7 +1228,123 @@ function init() {
   startChallengeButton.addEventListener("click", startChallengeForActiveAlarm);
   snoozeButton.addEventListener("click", snoozeActiveAlarm);
 
-  showView("list");
+  applyTimerPresetSeconds(300);
+
+  byId("btn-sw-start").addEventListener("click", () => {
+    if (swRunning) return;
+    swStartPerf = performance.now();
+    swRunning = true;
+    byId("btn-sw-start").disabled = true;
+    byId("btn-sw-pause").disabled = false;
+    cancelAnimationFrame(swRaf);
+    swLoop();
+  });
+  byId("btn-sw-pause").addEventListener("click", () => {
+    if (!swRunning) return;
+    swBaseElapsed += performance.now() - swStartPerf;
+    swRunning = false;
+    cancelAnimationFrame(swRaf);
+    swUpdateDisplay();
+    byId("btn-sw-start").disabled = false;
+    byId("btn-sw-pause").disabled = true;
+  });
+  byId("btn-sw-reset").addEventListener("click", () => {
+    swRunning = false;
+    cancelAnimationFrame(swRaf);
+    swBaseElapsed = 0;
+    swLaps.length = 0;
+    renderSwLaps();
+    swUpdateDisplay();
+    byId("btn-sw-start").disabled = false;
+    byId("btn-sw-pause").disabled = true;
+  });
+  byId("btn-sw-lap").addEventListener("click", () => {
+    swLaps.push(swCurrentMs());
+    renderSwLaps();
+  });
+  swUpdateDisplay();
+
+  document.querySelectorAll("[data-timer-preset]").forEach((b) => {
+    b.addEventListener("click", () => {
+      const s = Number(b.getAttribute("data-timer-preset"));
+      if (Number.isFinite(s) && s > 0) applyTimerPresetSeconds(s);
+    });
+  });
+
+  byId("btn-timer-start").addEventListener("click", () => {
+    ensureAudioContext();
+    stopTimerBeeps();
+    if (timerRunning) return;
+    if (timerFinished) {
+      timerRemainingMs = timerTotalMs;
+      timerFinished = false;
+    } else if (timerRemainingMs <= 0) {
+      const custom = readCustomTimerMs();
+      if (custom <= 0) return;
+      timerTotalMs = custom;
+      timerRemainingMs = custom;
+    }
+    timerEndAt = Date.now() + timerRemainingMs;
+    timerRunning = true;
+    byId("btn-timer-start").disabled = true;
+    byId("btn-timer-pause").disabled = false;
+    byId("timer-status").textContent = "";
+    if (timerTickId !== null) clearInterval(timerTickId);
+    timerTickId = window.setInterval(timerTick, 50);
+    timerTick();
+  });
+
+  byId("btn-timer-pause").addEventListener("click", () => {
+    if (!timerRunning) return;
+    timerRemainingMs = Math.max(0, timerEndAt - Date.now());
+    timerRunning = false;
+    if (timerTickId !== null) {
+      clearInterval(timerTickId);
+      timerTickId = null;
+    }
+    timerUpdateDisplay();
+    byId("btn-timer-start").disabled = false;
+    byId("btn-timer-pause").disabled = true;
+  });
+
+  byId("btn-timer-reset").addEventListener("click", () => {
+    stopTimerBeeps();
+    timerRunning = false;
+    timerFinished = false;
+    if (timerTickId !== null) {
+      clearInterval(timerTickId);
+      timerTickId = null;
+    }
+    timerRemainingMs = timerTotalMs;
+    timerUpdateDisplay();
+    byId("timer-status").textContent = "";
+    byId("btn-timer-start").disabled = false;
+    byId("btn-timer-pause").disabled = true;
+  });
+
+  [byId("timer-min"), byId("timer-sec")].forEach((el) => {
+    el.addEventListener("input", () => {
+      if (timerRunning) return;
+      const ms = readCustomTimerMs();
+      if (ms > 0) {
+        timerTotalMs = ms;
+        timerRemainingMs = ms;
+        timerFinished = false;
+        stopTimerBeeps();
+        byId("timer-status").textContent = "";
+        timerUpdateDisplay();
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-freeplay]").forEach((b) => {
+    b.addEventListener("click", () => {
+      const t = b.getAttribute("data-freeplay");
+      if (t) startFreeplay(t);
+    });
+  });
+
+  showPage("alarms");
   renderAlarms();
   startClockLoop();
 }

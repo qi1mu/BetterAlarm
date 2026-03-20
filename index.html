@@ -13,10 +13,18 @@
         <h1 class="app-title">Better Alarm</h1>
         <div id="app-status" class="app-status" aria-label="Status"></div>
       </div>
+      <nav class="app-nav" aria-label="Main">
+        <button type="button" class="nav-tab nav-tab--active" data-page="alarms">
+          Alarms
+        </button>
+        <button type="button" class="nav-tab" data-page="stopwatch">Stopwatch</button>
+        <button type="button" class="nav-tab" data-page="timer">Timer</button>
+        <button type="button" class="nav-tab" data-page="minigames">Minigames</button>
+      </nav>
     </header>
 
     <main class="app-main">
-      <section id="view-list" class="view" aria-label="Alarms">
+      <section id="page-alarms" class="view page" aria-label="Alarms">
         <div class="view__header">
           <h2 class="view__title">Alarms</h2>
           <button type="button" id="btn-add-alarm" class="btn btn--primary">
@@ -31,16 +39,100 @@
       </section>
 
       <section
-        id="view-minigame"
-        class="view view--hidden"
-        aria-label="Minigame"
+        id="page-stopwatch"
+        class="view page page--hidden"
+        aria-label="Stopwatch"
       >
-        <div class="view__header">
-          <h2 class="view__title">Minigame</h2>
+        <h2 class="view__title">Stopwatch</h2>
+        <p id="stopwatch-display" class="time-display" aria-live="polite">
+          00:00:00.000
+        </p>
+        <div class="tool-actions">
+          <button type="button" id="btn-sw-start" class="btn btn--primary">
+            Start
+          </button>
+          <button type="button" id="btn-sw-pause" class="btn" disabled>Pause</button>
+          <button type="button" id="btn-sw-reset" class="btn">Reset</button>
+          <button type="button" id="btn-sw-lap" class="btn">Lap</button>
         </div>
-        <div id="minigame-root" class="minigame-root">
-          <p class="muted">Minigame goes here.</p>
+        <ul id="stopwatch-laps" class="lap-list"></ul>
+      </section>
+
+      <section id="page-timer" class="view page page--hidden" aria-label="Timer">
+        <h2 class="view__title">Timer</h2>
+        <p class="muted">Presets</p>
+        <div class="preset-row">
+          <button type="button" class="btn" data-timer-preset="60">1 min</button>
+          <button type="button" class="btn" data-timer-preset="300">5 min</button>
+          <button type="button" class="btn" data-timer-preset="600">10 min</button>
+          <button type="button" class="btn" data-timer-preset="900">15 min</button>
+          <button type="button" class="btn" data-timer-preset="1800">30 min</button>
+          <button type="button" class="btn" data-timer-preset="3600">1 hour</button>
         </div>
+        <div class="timer-custom">
+          <label class="field">
+            <span class="field__label">Minutes</span>
+            <input
+              type="number"
+              id="timer-min"
+              class="field__control"
+              min="0"
+              value="0"
+            />
+          </label>
+          <label class="field">
+            <span class="field__label">Seconds</span>
+            <input
+              type="number"
+              id="timer-sec"
+              class="field__control"
+              min="0"
+              max="59"
+              value="0"
+            />
+          </label>
+        </div>
+        <p id="timer-display" class="time-display" aria-live="polite">00:00.000</p>
+        <p id="timer-status" class="muted"></p>
+        <div class="tool-actions">
+          <button type="button" id="btn-timer-start" class="btn btn--primary">
+            Start
+          </button>
+          <button type="button" id="btn-timer-pause" class="btn" disabled>
+            Pause
+          </button>
+          <button type="button" id="btn-timer-reset" class="btn">Reset</button>
+        </div>
+      </section>
+
+      <section
+        id="page-minigames"
+        class="view page page--hidden"
+        aria-label="Practice minigames"
+      >
+        <h2 class="view__title">Minigames</h2>
+        <p class="muted">Practice without an alarm.</p>
+        <div class="minigame-cards">
+          <div class="minigame-card">
+            <h3 class="minigame-card__title">Flappy Sprint</h3>
+            <button type="button" class="btn btn--primary" data-freeplay="flappy10">
+              Play
+            </button>
+          </div>
+          <div class="minigame-card">
+            <h3 class="minigame-card__title">Quick Math</h3>
+            <button type="button" class="btn btn--primary" data-freeplay="math3">
+              Play
+            </button>
+          </div>
+          <div class="minigame-card">
+            <h3 class="minigame-card__title">Memory Tap</h3>
+            <button type="button" class="btn btn--primary" data-freeplay="memory4">
+              Play
+            </button>
+          </div>
+        </div>
+        <div id="freeplay-root" class="freeplay-root"></div>
       </section>
     </main>
 
@@ -124,7 +216,7 @@
 
     <footer class="app-footer">
       <div class="app-footer__inner">
-        <small class="muted">Prototype skeleton — more coming later.</small>
+        <small class="muted">Better Alarm — prototype</small>
       </div>
     </footer>
   </body>

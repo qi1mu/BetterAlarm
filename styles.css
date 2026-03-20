@@ -365,3 +365,127 @@ body {
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35) inset;
 }
 
+.app-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 16px 14px;
+  max-width: 960px;
+  margin: 0 auto;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.nav-tab {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  padding: 8px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.nav-tab:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.nav-tab--active {
+  border-color: rgba(123, 92, 255, 0.65);
+  background: rgba(123, 92, 255, 0.22);
+}
+
+.page--hidden {
+  display: none;
+}
+
+.time-display {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: clamp(28px, 6vw, 40px);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin: 12px 0;
+}
+
+.tool-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.timer-custom {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.lap-list {
+  list-style: none;
+  padding: 8px 0 0;
+  margin: 12px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  max-height: 200px;
+  overflow: auto;
+}
+
+.lap-item {
+  padding: 6px 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.lap-num {
+  color: rgba(231, 234, 243, 0.55);
+  margin-right: 10px;
+}
+
+.minigame-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.minigame-card {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.minigame-card__title {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.freeplay-root {
+  margin-top: 16px;
+  min-height: 120px;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.game-progress {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(231, 234, 243, 0.95);
+}
+
+.game-countdown {
+  text-align: center;
+  padding: 24px 8px;
+  font-size: 16px;
+}
+
