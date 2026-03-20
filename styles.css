@@ -476,6 +476,11 @@ body {
   padding: 12px;
 }
 
+.freeplay-difficulty {
+  max-width: 280px;
+  margin-bottom: 8px;
+}
+
 .game-progress {
   margin: 0;
   font-size: 14px;

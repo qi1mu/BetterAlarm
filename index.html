@@ -112,6 +112,14 @@
       >
         <h2 class="view__title">Minigames</h2>
         <p class="muted">Practice without an alarm.</p>
+        <label class="field freeplay-difficulty">
+          <span class="field__label">Difficulty</span>
+          <select id="freeplay-difficulty" class="field__control" aria-label="Practice difficulty">
+            <option value="easy">Easy</option>
+            <option value="normal" selected>Normal</option>
+            <option value="hard">Hard</option>
+          </select>
+        </label>
         <div class="minigame-cards">
           <div class="minigame-card">
             <h3 class="minigame-card__title">Flappy Sprint</h3>
@@ -176,6 +184,15 @@
               <option value="math3">Quick Math</option>
               <option value="memory4">Memory Tap</option>
               <option value="none">No Game</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span class="field__label">Difficulty</span>
+            <select name="difficulty" class="field__control">
+              <option value="easy">Easy (~0.75× normal)</option>
+              <option value="normal" selected>Normal</option>
+              <option value="hard">Hard (2× easy)</option>
             </select>
           </label>
 

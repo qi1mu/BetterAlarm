@@ -32,10 +32,61 @@ const pages = {
 
 const GAME_START_DELAY_MIN_MS = 1000;
 const GAME_START_DELAY_MAX_MS = 2000;
-const FLAPPY_GATES_TO_WIN = 8;
-const FLAPPY_LIVES = 4;
-const MATH_REQUIRED_CORRECT = 8;
-const MEMORY_MAX_ROUND = 6;
+
+/** Normal baseline. Easy ≈ 0.75×; hard = 2× easy (1.5× normal) for lengths. */
+const NORMAL_FLAPPY_GATES = 8;
+const NORMAL_FLAPPY_LIVES = 4;
+const NORMAL_MATH_REQUIRED = 8;
+const NORMAL_MEMORY_ROUNDS = 6;
+
+function roundSkill(n) {
+  return Math.max(1, Math.round(n));
+}
+
+/**
+ * @returns {{ key: string, flappyGates: number, flappyLives: number, mathRequired: number, memoryRounds: number, mathStreakForPoint: number }}
+ */
+function getDifficultyProfile(level) {
+  const gN = NORMAL_FLAPPY_GATES;
+  const lN = NORMAL_FLAPPY_LIVES;
+  const mN = NORMAL_MATH_REQUIRED;
+  const rN = NORMAL_MEMORY_ROUNDS;
+
+  if (level === "easy") {
+    return {
+      key: "easy",
+      flappyGates: roundSkill(gN * 0.75),
+      flappyLives: roundSkill(lN * 0.75),
+      mathRequired: roundSkill(mN * 0.75),
+      memoryRounds: roundSkill(rN * 0.75),
+      mathStreakForPoint: 1,
+    };
+  }
+
+  if (level === "hard") {
+    const easyG = roundSkill(gN * 0.75);
+    const easyL = roundSkill(lN * 0.75);
+    const easyM = roundSkill(mN * 0.75);
+    const easyR = roundSkill(rN * 0.75);
+    return {
+      key: "hard",
+      flappyGates: roundSkill(easyG * 2),
+      flappyLives: roundSkill(easyL * 2),
+      mathRequired: roundSkill(easyM * 2),
+      memoryRounds: roundSkill(easyR * 2),
+      mathStreakForPoint: 3,
+    };
+  }
+
+  return {
+    key: "normal",
+    flappyGates: gN,
+    flappyLives: lN,
+    mathRequired: mN,
+    memoryRounds: rN,
+    mathStreakForPoint: 2,
+  };
+}
 
 const STORAGE_KEY = "better-alarm.alarms.v1";
 const SNOOZE_MS = 5 * 60 * 1000;
@@ -240,6 +291,11 @@ function loadAlarms() {
           : null,
         snoozeUntil:
           typeof item.snoozeUntil === "number" ? item.snoozeUntil : null,
+        difficulty: ["easy", "normal", "hard"].includes(
+          String(item.difficulty || "")
+        )
+          ? String(item.difficulty)
+          : "normal",
       }))
       .filter((item) => /^\d{2}:\d{2}$/.test(item.time));
   } catch {
@@ -271,6 +327,18 @@ function getMinigameLabel(type) {
       return "No Game";
     default:
       return "Flappy Sprint";
+  }
+}
+
+function getDifficultyLabel(level) {
+  switch (level) {
+    case "easy":
+      return "Easy";
+    case "hard":
+      return "Hard";
+    case "normal":
+    default:
+      return "Normal";
   }
 }
 
@@ -441,6 +509,12 @@ function renderAlarms() {
       const timeText = formatTime24To12(alarm.time);
       const label = escapeHtml(alarm.label || "Alarm");
       const minigame = escapeHtml(getMinigameLabel(alarm.minigame));
+      const diffPill =
+        alarm.minigame === "none"
+          ? ""
+          : `<span class="pill">${escapeHtml(
+              getDifficultyLabel(alarm.difficulty || "normal")
+            )}</span>`;
       const enabled = alarm.enabled ? "checked" : "";
       const hasFutureSnooze =
         alarm.enabled &&
@@ -462,6 +536,7 @@ function renderAlarms() {
             <div class="alarm-item__sub">
               <span>${label}</span>
               <span class="pill">Minigame: ${minigame}</span>
+              ${diffPill}
               ${snoozeLabel}
             </div>
           </div>
@@ -494,6 +569,8 @@ function openAlarmModal() {
       byId("alarm-form").elements.time.value = alarm.time;
       byId("alarm-form").elements.label.value = alarm.label || "";
       byId("alarm-form").elements.minigame.value = alarm.minigame || "flappy10";
+      byId("alarm-form").elements.difficulty.value =
+        alarm.difficulty || "normal";
       title.textContent = "Edit Alarm";
     }
   } else {
@@ -513,7 +590,10 @@ function closeAlarmModal() {
   byId("btn-add-alarm").focus();
 }
 
-function mountFlappySprint(rootEl, onWin) {
+function mountFlappySprint(rootEl, onWin, profile = getDifficultyProfile("normal")) {
+  const gatesToWin = profile.flappyGates;
+  const livesMax = profile.flappyLives;
+
   const wrapper = document.createElement("div");
   wrapper.className = "game-stack";
   wrapper.innerHTML =
@@ -533,7 +613,7 @@ function mountFlappySprint(rootEl, onWin) {
   const progressEl = wrapper.querySelector("#flappy-progress");
   const updateProgress = () => {
     if (progressEl) {
-      progressEl.textContent = `Gates: ${passed}/${FLAPPY_GATES_TO_WIN}`;
+      progressEl.textContent = `Gates: ${passed}/${gatesToWin}`;
     }
   };
 
@@ -550,7 +630,7 @@ function mountFlappySprint(rootEl, onWin) {
   let gateGapY = 100;
   let scoredThisGate = false;
   let isDead = false;
-  let lives = FLAPPY_LIVES;
+  let lives = livesMax;
   let invulnFrames = 0;
 
   const flap = () => {
@@ -576,7 +656,7 @@ function mountFlappySprint(rootEl, onWin) {
     birdY = 100;
     birdVy = 0;
     passed = 0;
-    lives = FLAPPY_LIVES;
+    lives = livesMax;
     invulnFrames = 0;
     gateX = 420;
     gateGapY = 70 + Math.random() * 70;
@@ -620,7 +700,7 @@ function mountFlappySprint(rootEl, onWin) {
       scoredThisGate = true;
       passed += 1;
       updateProgress();
-      if (passed >= FLAPPY_GATES_TO_WIN) {
+      if (passed >= gatesToWin) {
         finished = true;
         onWin();
         return;
@@ -689,7 +769,10 @@ function mountFlappySprint(rootEl, onWin) {
   };
 }
 
-function mountQuickMath(rootEl, onWin) {
+function mountQuickMath(rootEl, onWin, profile = getDifficultyProfile("normal")) {
+  const requiredCorrect = profile.mathRequired;
+  const streakForPoint = profile.mathStreakForPoint;
+
   const wrapper = document.createElement("div");
   wrapper.className = "game-stack";
   wrapper.innerHTML = `
@@ -710,16 +793,19 @@ function mountQuickMath(rootEl, onWin) {
   if (!(q && input && submit && status)) return () => {};
 
   let solved = 0;
+  let streak = 0;
   let a = 0;
   let b = 0;
   let op = "+";
   let answer = 0;
   let done = false;
-  const requiredCorrect = MATH_REQUIRED_CORRECT;
 
   const updateMathProgress = () => {
-    if (progressEl) {
+    if (!progressEl) return;
+    if (streakForPoint <= 1) {
       progressEl.textContent = `Correct: ${solved}/${requiredCorrect}`;
+    } else {
+      progressEl.textContent = `Points: ${solved}/${requiredCorrect} · Streak: ${streak}/${streakForPoint}`;
     }
   };
 
@@ -748,26 +834,51 @@ function mountQuickMath(rootEl, onWin) {
     if (op === "-") answer = a - b;
     if (op === "*") answer = a * b;
     q.textContent = `${a} ${op} ${b} = ?`;
-    status.textContent = "";
+    if (streakForPoint <= 1) status.textContent = "";
     input.value = "";
     input.focus();
     updateMathProgress();
   };
+
   const onSubmit = () => {
     if (done) return;
     if (Number(input.value) === answer) {
-      solved += 1;
-      updateMathProgress();
-      if (solved >= requiredCorrect) {
-        done = true;
-        onWin();
+      if (streakForPoint <= 1) {
+        solved += 1;
+        updateMathProgress();
+        if (solved >= requiredCorrect) {
+          done = true;
+          onWin();
+          return;
+        }
+        next();
         return;
+      }
+      streak += 1;
+      if (streak >= streakForPoint) {
+        solved += 1;
+        streak = 0;
+        status.textContent = "Point earned!";
+        updateMathProgress();
+        if (solved >= requiredCorrect) {
+          done = true;
+          onWin();
+          return;
+        }
+      } else {
+        status.textContent = `Streak ${streak}/${streakForPoint}`;
+        updateMathProgress();
       }
       next();
     } else {
-      solved = Math.max(0, solved - 1);
-      updateMathProgress();
-      status.textContent = "Wrong. Try another.";
+      if (streakForPoint <= 1) {
+        solved = Math.max(0, solved - 1);
+        status.textContent = "Wrong. Try another.";
+      } else {
+        streak = 0;
+        status.textContent = "Streak reset.";
+        updateMathProgress();
+      }
       next();
     }
   };
@@ -785,7 +896,9 @@ function mountQuickMath(rootEl, onWin) {
   };
 }
 
-function mountMemoryTap(rootEl, onWin) {
+function mountMemoryTap(rootEl, onWin, profile = getDifficultyProfile("normal")) {
+  const maxRound = profile.memoryRounds;
+
   const colors = ["#4f83ff", "#ff7f7f", "#7ee787", "#ffd166"];
   const wrapper = document.createElement("div");
   wrapper.className = "game-stack";
@@ -802,11 +915,10 @@ function mountMemoryTap(rootEl, onWin) {
   if (!(grid && status)) return () => {};
 
   let round = 1;
-  const maxRound = MEMORY_MAX_ROUND;
 
   const updateMemProgress = () => {
     if (memProgress) {
-      memProgress.textContent = `Round ${Math.min(round, MEMORY_MAX_ROUND)}/${MEMORY_MAX_ROUND}`;
+      memProgress.textContent = `Round ${Math.min(round, maxRound)}/${maxRound}`;
     }
   };
 
@@ -946,18 +1058,20 @@ function startChallengeForActiveAlarm() {
     root.innerHTML = "";
   };
 
+  const profile = getDifficultyProfile(alarm.difficulty || "normal");
+
   countdownTeardown = runGameStartCountdown(root, () => {
     countdownTeardown = null;
     switch (alarm.minigame) {
       case "math3":
-        gameTeardown = mountQuickMath(root, onWin);
+        gameTeardown = mountQuickMath(root, onWin, profile);
         break;
       case "memory4":
-        gameTeardown = mountMemoryTap(root, onWin);
+        gameTeardown = mountMemoryTap(root, onWin, profile);
         break;
       case "flappy10":
       default:
-        gameTeardown = mountFlappySprint(root, onWin);
+        gameTeardown = mountFlappySprint(root, onWin, profile);
         break;
     }
   });
@@ -1069,6 +1183,9 @@ function startFreeplay(type) {
   const root = byId("freeplay-root");
   root.innerHTML = "";
 
+  const level = String(byId("freeplay-difficulty").value || "normal");
+  const profile = getDifficultyProfile(level);
+
   const onDone = () => {
     if (freeplayCleanup) {
       freeplayCleanup();
@@ -1095,14 +1212,14 @@ function startFreeplay(type) {
     countdownTeardown = null;
     switch (type) {
       case "math3":
-        gameTeardown = mountQuickMath(root, onDone);
+        gameTeardown = mountQuickMath(root, onDone, profile);
         break;
       case "memory4":
-        gameTeardown = mountMemoryTap(root, onDone);
+        gameTeardown = mountMemoryTap(root, onDone, profile);
         break;
       case "flappy10":
       default:
-        gameTeardown = mountFlappySprint(root, onDone);
+        gameTeardown = mountFlappySprint(root, onDone, profile);
         break;
     }
   });
@@ -1191,6 +1308,7 @@ function init() {
     const time = String(fd.get("time") || "").trim();
     const label = String(fd.get("label") || "").trim() || "Alarm";
     const minigame = String(fd.get("minigame") || "").trim() || "flappy10";
+    const difficulty = String(fd.get("difficulty") || "").trim() || "normal";
 
     if (!time) return;
 
@@ -1200,12 +1318,17 @@ function init() {
       ? minigame
       : "flappy10";
 
+    const safeDifficulty = ["easy", "normal", "hard"].includes(difficulty)
+      ? difficulty
+      : "normal";
+
     if (editingAlarmId) {
       const alarm = alarms.find((item) => item.id === editingAlarmId);
       if (alarm) {
         alarm.time = time;
         alarm.label = label;
         alarm.minigame = safeMinigame;
+        alarm.difficulty = safeDifficulty;
       }
     } else {
       alarms.push({
@@ -1213,6 +1336,7 @@ function init() {
         time,
         label,
         minigame: safeMinigame,
+        difficulty: safeDifficulty,
         enabled: true,
         lastTriggeredDate: null,
         snoozeUntil: null,
