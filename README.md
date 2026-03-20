@@ -1,4 +1,4 @@
-# Better Alarm
+# Spiderman Alarm
 
 Web prototype for an alarm app: alarms with optional minigames to dismiss, plus stopwatch, timer, and practice minigames.
 
@@ -7,7 +7,7 @@ Web prototype for an alarm app: alarms with optional minigames to dismiss, plus 
 ### Alarms
 
 - Create, **edit**, delete, and toggle alarms; list shows next snooze state when applicable.
-- Alarms persist in **`localStorage`** (`better-alarm.alarms.v1`).
+- Alarms persist in **`localStorage`** (`spiderman-alarm.alarms.v1`; migrates once from `better-alarm.alarms.v1` if present).
 - Firing uses the **browser clock** (minute precision for scheduled time; snooze uses exact timestamps).
 - **Snooze 5 minutes** from the ringing modal.
 - **Difficulty** (per alarm, for minigames): **Easy**, **Normal**, **Hard** — see table below.
@@ -27,7 +27,7 @@ Web prototype for an alarm app: alarms with optional minigames to dismiss, plus 
 | Normal | 8 / 4                | 8           | 6               | **2** correct in a row → +1 point |
 | Hard   | 12 / 6               | 12          | 10              | **3** correct in a row → +1 point |
 
-Wrong answers on Easy can still reduce your solved count. On Normal/Hard, a wrong answer **resets the streak** (points already earned stay).
+Wrong answers on Easy can still reduce your solved count. On Normal/Hard, a wrong answer **ends the run** and resets progress toward the next point (points already earned stay). **Long runs keep paying out:** every time you hit the streak length again you get another point (e.g. Hard: 3, 6, 9… correct in a row → 1, 2, 3 points). In-game, **Run** counts consecutive correct without dropping when you score a point; **Next point** is progress toward the next award (e.g. after 3/3 it shows `0/3` until you keep answering).
 
 ### Stopwatch
 

@@ -88,7 +88,8 @@ function getDifficultyProfile(level) {
   };
 }
 
-const STORAGE_KEY = "better-alarm.alarms.v1";
+const STORAGE_KEY = "spiderman-alarm.alarms.v1";
+const LEGACY_ALARM_STORAGE_KEY = "better-alarm.alarms.v1";
 const SNOOZE_MS = 5 * 60 * 1000;
 let alarms = [];
 let activeAlarmId = null;
@@ -267,7 +268,15 @@ function saveAlarms() {
 
 function loadAlarms() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    let raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      const legacy = localStorage.getItem(LEGACY_ALARM_STORAGE_KEY);
+      if (legacy) {
+        localStorage.setItem(STORAGE_KEY, legacy);
+        localStorage.removeItem(LEGACY_ALARM_STORAGE_KEY);
+        raw = legacy;
+      }
+    }
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -794,6 +803,8 @@ function mountQuickMath(rootEl, onWin, profile = getDifficultyProfile("normal"))
 
   let solved = 0;
   let streak = 0;
+  /** Consecutive correct in this run; only wrong resets (UI shows run keeps going after each point). */
+  let runLength = 0;
   let a = 0;
   let b = 0;
   let op = "+";
@@ -805,7 +816,7 @@ function mountQuickMath(rootEl, onWin, profile = getDifficultyProfile("normal"))
     if (streakForPoint <= 1) {
       progressEl.textContent = `Correct: ${solved}/${requiredCorrect}`;
     } else {
-      progressEl.textContent = `Points: ${solved}/${requiredCorrect} · Streak: ${streak}/${streakForPoint}`;
+      progressEl.textContent = `Points: ${solved}/${requiredCorrect} · Run: ${runLength} · Next point: ${streak}/${streakForPoint}`;
     }
   };
 
@@ -854,20 +865,27 @@ function mountQuickMath(rootEl, onWin, profile = getDifficultyProfile("normal"))
         next();
         return;
       }
+      runLength += 1;
       streak += 1;
-      if (streak >= streakForPoint) {
+      let pointsThisAnswer = 0;
+      while (streak >= streakForPoint) {
         solved += 1;
-        streak = 0;
-        status.textContent = "Point earned!";
-        updateMathProgress();
-        if (solved >= requiredCorrect) {
-          done = true;
-          onWin();
-          return;
-        }
+        streak -= streakForPoint;
+        pointsThisAnswer += 1;
+      }
+      if (pointsThisAnswer > 0) {
+        status.textContent =
+          pointsThisAnswer > 1
+            ? `${pointsThisAnswer} points — streak still going!`
+            : "Point earned — keep the streak for more!";
       } else {
         status.textContent = `Streak ${streak}/${streakForPoint}`;
-        updateMathProgress();
+      }
+      updateMathProgress();
+      if (solved >= requiredCorrect) {
+        done = true;
+        onWin();
+        return;
       }
       next();
     } else {
@@ -876,7 +894,8 @@ function mountQuickMath(rootEl, onWin, profile = getDifficultyProfile("normal"))
         status.textContent = "Wrong. Try another.";
       } else {
         streak = 0;
-        status.textContent = "Streak reset.";
+        runLength = 0;
+        status.textContent = "Run ended — streak reset.";
         updateMathProgress();
       }
       next();
