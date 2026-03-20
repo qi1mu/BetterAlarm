@@ -32,9 +32,10 @@ const pages = {
 
 const GAME_START_DELAY_MIN_MS = 1000;
 const GAME_START_DELAY_MAX_MS = 2000;
-const FLAPPY_GATES_TO_WIN = 5;
-const MATH_REQUIRED_CORRECT = 5;
-const MEMORY_MAX_ROUND = 4;
+const FLAPPY_GATES_TO_WIN = 8;
+const FLAPPY_LIVES = 4;
+const MATH_REQUIRED_CORRECT = 8;
+const MEMORY_MAX_ROUND = 6;
 
 const STORAGE_KEY = "better-alarm.alarms.v1";
 const SNOOZE_MS = 5 * 60 * 1000;
@@ -549,7 +550,7 @@ function mountFlappySprint(rootEl, onWin) {
   let gateGapY = 100;
   let scoredThisGate = false;
   let isDead = false;
-  let lives = 3;
+  let lives = FLAPPY_LIVES;
   let invulnFrames = 0;
 
   const flap = () => {
@@ -575,7 +576,7 @@ function mountFlappySprint(rootEl, onWin) {
     birdY = 100;
     birdVy = 0;
     passed = 0;
-    lives = 3;
+    lives = FLAPPY_LIVES;
     invulnFrames = 0;
     gateX = 420;
     gateGapY = 70 + Math.random() * 70;

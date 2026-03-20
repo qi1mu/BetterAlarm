@@ -11,9 +11,9 @@ Web prototype for an alarm app: alarms with optional minigames to dismiss, plus 
 - Firing uses the **browser clock** (minute precision for scheduled time; snooze uses exact timestamps).
 - **Snooze 5 minutes** from the ringing modal.
 - **Minigames** (or **No Game** with direct dismiss):
-  - **Flappy Sprint** — pass **5 gates**, **3 lives**, short invulnerability after losing a life; **progress** shows gates cleared.
-  - **Quick Math** — **5** correct answers; heavier weight on **multiplication** with larger operands; **progress** shows `Correct: n/5`.
-  - **Memory Tap** — pattern rounds with black tiles that **light** for the sequence; **progress** shows `Round n/4`.
+  - **Flappy Sprint** — pass **8 gates**, **4 lives**, short invulnerability after losing a life; **progress** shows gates cleared.
+  - **Quick Math** — **8** correct answers; heavier weight on **multiplication** with larger operands; **progress** shows `Correct: n/8`.
+  - **Memory Tap** — pattern rounds with black tiles that **light** for the sequence; **progress** shows `Round n/6`.
 - After **Start Challenge**, games begin after a **1–2 second** countdown (not instant).
 
 ### Stopwatch
